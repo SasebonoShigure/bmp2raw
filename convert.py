@@ -94,6 +94,7 @@ def bmp_to_raw(bmpfile, rawfile):
         row_padding = (4 - col % 4) % 4
         for i in range(0,row):
             for j in range(0,col):
+                # 8位扩展为16位
                 row_data += (int.from_bytes(bf.read(1), byteorder = 'little') << 8).to_bytes(2, 'little')
             # 去掉行尾padding
             bf.read(row_padding)
