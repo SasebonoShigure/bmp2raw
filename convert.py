@@ -2,7 +2,10 @@
 import os
 import argparse
 
-def raw_to_bmp(rawfile, bmpfile):
+def raw_to_bmp(rawfile, dstdir, bmp_file_name, names):
+    '''
+    names为空则不拆分，否则拆分
+    '''
     # 读16bitraw文件
     with open(rawfile, 'rb') as rf:
         # 'RAWT'
@@ -31,6 +34,20 @@ def raw_to_bmp(rawfile, bmpfile):
     bmp_data = reversed(bmp_data)
     bmp_data = b''.join(bmp_data)
 
+    # 如果需要拆分
+    if names:
+        temp = []
+        for i in range(0, len(names)):
+            temp.append(bmp_data[i * (len(bmp_data) // len(names)):(i+1) * (len(bmp_data) // len(names))])
+        bmp_data = temp
+        bmp_data.reverse()
+
+    # 如果需要拆分
+    if names:
+        row = row // len(names)
+        bmp_data_size = len(bmp_data[0])
+    else:
+        bmp_data_size = len(bmp_data)
     # struct BITMAPINFOHEADER {
     #     DWORD biSize; // 本结构所占用字节数
     #     LONG biWidth; // 位图的宽度，以像素为单位
@@ -44,13 +61,14 @@ def raw_to_bmp(rawfile, bmpfile):
     #     DWORD biClrUsed; // 位图实际使用的颜色表中的颜色数
     #     DWORD biClrImportant; // 位图显示过程中重要的颜色数
     # }; //该结构占据 40 个字节。
+
     bmih = (40).to_bytes(4, 'little')
     bmih += (col).to_bytes(4, 'little')
     bmih += (row).to_bytes(4, 'little')
     bmih += (1).to_bytes(2, 'little')
     bmih += (8).to_bytes(2, 'little')
     bmih += (0).to_bytes(4, 'little')
-    bmih += (len(bmp_data)).to_bytes(4, 'little')
+    bmih += (bmp_data_size).to_bytes(4, 'little')
     bmih += (11811).to_bytes(4, 'little')
     bmih += (11811).to_bytes(4, 'little')
     bmih += (256).to_bytes(4, 'little')
@@ -66,18 +84,33 @@ def raw_to_bmp(rawfile, bmpfile):
     # 为了让像素起始位置对齐到四字节
     gap1 = (0).to_bytes(2, 'little')
     offset = 14 + 40 + len(color_table) + len(gap1)
-    bmp_size = offset + len(bmp_data)
+    bmp_size = offset + bmp_data_size
     bmp_header = b'BM' + (bmp_size).to_bytes(4, 'little') + (0).to_bytes(4, 'little') + (offset).to_bytes(4, 'little')
 
+    # 如果需要拆分
+    if names:
+        for i in range(0, len(names)):
+            # rawfile = os.path.join(dstdir, names[i])
+            bmpfile = os.path.join(names[i], bmp_file_name)
+            with open(bmpfile,'wb') as bf:
+                bf.write(bmp_header)
+                bf.write(bmih)
+                bf.write(color_table)
+                bf.write(gap1)
+                bf.write(bmp_data[i])
+    else:
+        bmpfile = os.path.join(dstdir, bmp_file_name)
+        with open(bmpfile, 'wb') as bf:
+            bf.write(bmp_header)
+            bf.write(bmih)
+            bf.write(color_table)
+            bf.write(gap1)
+            bf.write(bmp_data)
 
-    with open(bmpfile, 'wb') as bf:
-        bf.write(bmp_header)
-        bf.write(bmih)
-        bf.write(color_table)
-        bf.write(gap1)
-        bf.write(bmp_data)
-
-def bmp_to_raw(bmpfile, rawfile):
+def bmp_to_raw(bmpfile, dstdir, raw_file_name, names):
+    '''
+    names为空则不拆分，否则拆分
+    '''
     with open(bmpfile, 'rb') as bf:
         bf.seek(10)
         # 像素起始位置
@@ -94,7 +127,6 @@ def bmp_to_raw(bmpfile, rawfile):
         row_padding = (4 - col % 4) % 4
         for i in range(0,row):
             for j in range(0,col):
-                # 8位扩展为16位
                 row_data += (int.from_bytes(bf.read(1), byteorder = 'little') << 8).to_bytes(2, 'little')
             # 去掉行尾padding
             bf.read(row_padding)
@@ -103,28 +135,55 @@ def bmp_to_raw(bmpfile, rawfile):
         # bmp是行像素从下到上存储的，需要翻转
         raw_data = reversed(raw_data)
         raw_data = b''.join(raw_data)
+        # 如果需要拆分
+        if names:
+            temp = []
+            for i in range(0, len(names)):
+                temp.append(raw_data[i * (len(raw_data) // len(names)):(i+1) * (len(raw_data) // len(names))])
+            raw_data = temp
+
+    # 如果需要拆分
+    if names:
+        row = row // len(names)
 
     raw_header = b'RAWT'
     raw_header += (16).to_bytes(4, 'little')
     raw_header += (col).to_bytes(4, 'little')
     raw_header += (row).to_bytes(4, 'little')
-
-    with open(rawfile,'wb') as rf:
-        rf.write(raw_header)
-        rf.write(raw_data)
+    # 如果需要拆分
+    if names:
+        for i in range(0, len(names)):
+            # rawfile = os.path.join(dstdir, names[i])
+            rawfile = os.path.join(names[i], raw_file_name)
+            with open(rawfile,'wb') as rf:
+                rf.write(raw_header)
+                rf.write(raw_data[i])
+    else:
+        rawfile = os.path.join(dstdir, raw_file_name)
+        with open(rawfile,'wb') as rf:
+            rf.write(raw_header)
+            rf.write(raw_data)
 
 
 if '__main__' == __name__:
     # 解析命令
     parser = argparse.ArgumentParser(description='Convert each file from srcdir to dstdir, rather from bmp into 16bitraw or 16bitraw into bmp')
-    parser.add_argument("srcdir", help="source path")
-    parser.add_argument("dstdir", help="destination path")
+    parser.add_argument("srcdir", help = "source path")
+    parser.add_argument("dstdir", help = "destination path")
+    parser.add_argument("-s", "--image_struct",help = "optional argument, N words separated by colon. If passes, the images will be separated into N parts")
     args = parser.parse_args()
     srcdir = args.srcdir
     dstdir = args.dstdir
     # 如果dest目录不存在就创建目录
     if not os.path.exists(dstdir):
         os.makedirs(dstdir)
+    names = []
+    if args.image_struct:
+        names = args.image_struct.split(':')
+        for i in range(0, len(names)):
+            names[i] = os.path.join(dstdir, names[i])
+            if not os.path.exists(names[i]):
+                os.makedirs(names[i])
     # 遍历srcdir
     for root, dirs, files in os.walk(srcdir):
         for file in files:
@@ -135,8 +194,8 @@ if '__main__' == __name__:
             with open(srcfile,'rb') as f:
                 headname = f.read(2)
             if headname == b"BM":
-                dstfile = os.path.join(dstdir,filename+'.16bitraw')
-                bmp_to_raw(srcfile, dstfile)
+                dstfile = os.path.join(dstdir, filename + '.16bitraw')
+                bmp_to_raw(srcfile, dstdir, filename + '.16bitraw', names)
             elif headname == b"RA":
-                dstfile = os.path.join(dstdir,filename+'.bmp')
-                raw_to_bmp(srcfile, dstfile)
+                dstfile = os.path.join(dstdir, filename + '.bmp')
+                raw_to_bmp(srcfile, dstdir, filename + '.bmp', names)
